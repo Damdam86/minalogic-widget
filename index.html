@@ -33,8 +33,8 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-    <!-- React Query depuis CDN -->
-    <script src="https://unpkg.com/@tanstack/react-query@5.17.0/build/umd/index.production.js"></script>
+    <!-- React Query v3 (meilleure compatibilité UMD) -->
+    <script src="https://unpkg.com/react-query@3.39.3/dist/react-query.production.min.js"></script>
 
     <!-- Supabase JS depuis CDN -->
     <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
@@ -73,7 +73,7 @@
         );
 
         // Composant Widget React
-        const { useState, useEffect } = React;
+        const { useState } = React;
         const { QueryClient, QueryClientProvider, useQuery } = window.ReactQuery;
 
         const queryClient = new QueryClient({
@@ -87,38 +87,54 @@
         });
 
         // Hook pour récupérer les AAP
-        function useProjectCalls(page = 0, pageSize = 20) {
-            return useQuery({
-                queryKey: ['project-calls', page],
-                queryFn: async () => {
-                    const { data, error, count } = await supabaseClient
-                        .from('project_calls_normalized_mat')
-                        .select('*', { count: 'exact' })
-                        .eq('status', 'open')
-                        .order('closing_date', { ascending: true, nullsFirst: false })
-                        .range(page * pageSize, (page + 1) * pageSize - 1);
+        function useProjectCalls(page, pageSize) {
+            if (!page) page = 0;
+            if (!pageSize) pageSize = 20;
+            
+            return useQuery(['project-calls', page], async function() {
+                const result = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('*', { count: 'exact' })
+                    .eq('status', 'open')
+                    .order('closing_date', { ascending: true, nullsFirst: false })
+                    .range(page * pageSize, (page + 1) * pageSize - 1);
 
-                    if (error) throw error;
-                    return { calls: data || [], total: count || 0, totalPages: Math.ceil((count || 0) / pageSize) };
-                }
+                if (result.error) throw result.error;
+                return { 
+                    calls: result.data || [], 
+                    total: result.count || 0, 
+                    totalPages: Math.ceil((result.count || 0) / pageSize) 
+                };
             });
         }
 
         // Composant principal
         function ProjectCallsWidget() {
-            const [page, setPage] = useState(0);
-            const { data, isLoading, error } = useProjectCalls(page, 20);
+            const pageState = useState(0);
+            const page = pageState[0];
+            const setPage = pageState[1];
+            
+            const queryResult = useProjectCalls(page, 20);
+            const data = queryResult.data;
+            const isLoading = queryResult.isLoading;
+            const error = queryResult.error;
 
             if (error) {
                 return React.createElement('div', {
                     className: 'p-8 text-center text-red-600'
-                }, 'Erreur de chargement: ' + error.message);
+                }, 'Erreur: ' + error.message);
             }
 
             if (isLoading) {
                 return React.createElement('div', {
                     className: 'p-8 text-center text-gray-600'
                 }, 'Chargement...');
+            }
+
+            if (!data || !data.calls || data.calls.length === 0) {
+                return React.createElement('div', {
+                    className: 'p-8 text-center text-gray-600'
+                }, 'Aucun appel à projet ouvert');
             }
 
             return React.createElement('div', {
@@ -136,178 +152,116 @@
                     React.createElement('p', {
                         key: 'subtitle',
                         className: 'text-lg text-gray-600'
-                    }, `${data.total} appels à projets ouverts`)
+                    }, data.total + ' appels à projets ouverts')
                 ]),
 
-                // Liste des AAP
+                // Liste
                 React.createElement('div', {
                     key: 'list',
                     className: 'space-y-6'
-                }, data.calls.map(call =>
-                    React.createElement('div', {
+                }, data.calls.map(function(call) {
+                    var badgeClass = 'px-3 py-1 rounded-full text-sm font-semibold ';
+                    var badgeText = '';
+                    
+                    if (call.call_type === 'european') {
+                        badgeClass += 'bg-blue-500 text-white';
+                        badgeText = '🇪🇺 Européen';
+                    } else if (call.call_type === 'national') {
+                        badgeClass += 'bg-green-500 text-white';
+                        badgeText = '🇫🇷 National';
+                    } else {
+                        badgeClass += 'bg-purple-500 text-white';
+                        badgeText = '📍 Régional';
+                    }
+
+                    var cardElements = [
+                        React.createElement('span', {
+                            key: 'badge',
+                            className: badgeClass
+                        }, badgeText),
+                        React.createElement('h2', {
+                            key: 'title',
+                            className: 'text-2xl font-bold text-gray-900 mt-3'
+                        }, call.title)
+                    ];
+
+                    if (call.program) {
+                        cardElements.push(React.createElement('p', {
+                            key: 'program',
+                            className: 'text-sm text-gray-600 mt-2'
+                        }, call.program));
+                    }
+
+                    if (call.short_description) {
+                        var desc = call.short_description.substring(0, 300);
+                        if (call.short_description.length > 300) desc += '...';
+                        cardElements.push(React.createElement('p', {
+                            key: 'desc',
+                            className: 'mt-4 text-gray-700'
+                        }, desc));
+                    }
+
+                    if (call.closing_date) {
+                        cardElements.push(React.createElement('div', {
+                            key: 'date',
+                            className: 'mt-4 text-red-600 font-semibold'
+                        }, '🗓️ Clôture : ' + new Date(call.closing_date).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric'
+                        })));
+                    }
+
+                    if (call.official_url) {
+                        cardElements.push(React.createElement('a', {
+                            key: 'link',
+                            href: call.official_url,
+                            target: '_blank',
+                            rel: 'noopener noreferrer',
+                            className: 'inline-block mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700'
+                        }, '📄 Plus d\'infos'));
+                    }
+
+                    return React.createElement('div', {
                         key: call.id,
                         className: 'bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow border border-gray-200'
-                    }, [
-                        // En-tête
-                        React.createElement('div', {
-                            key: 'header',
-                            className: 'space-y-3'
-                        }, [
-                            React.createElement('div', {
-                                key: 'badges',
-                                className: 'flex gap-2 flex-wrap'
-                            }, [
-                                React.createElement('span', {
-                                    key: 'type',
-                                    className: `px-3 py-1 rounded-full text-sm font-semibold ${
-                                        call.call_type === 'european' ? 'bg-blue-500 text-white' :
-                                        call.call_type === 'national' ? 'bg-green-500 text-white' :
-                                        'bg-purple-500 text-white'
-                                    }`
-                                }, call.call_type === 'european' ? '🇪🇺 Européen' :
-                                   call.call_type === 'national' ? '🇫🇷 National' : '📍 Régional'),
-                                call.source && React.createElement('span', {
-                                    key: 'source',
-                                    className: 'px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 border border-gray-300'
-                                }, call.source)
-                            ]),
-                            React.createElement('h2', {
-                                key: 'title',
-                                className: 'text-2xl font-bold text-gray-900 leading-tight'
-                            }, call.title),
-                            call.program && React.createElement('p', {
-                                key: 'program',
-                                className: 'text-sm text-gray-600 font-medium'
-                            }, call.program + (call.sub_program ? ' - ' + call.sub_program : ''))
-                        ]),
-
-                        // Description
-                        call.short_description && React.createElement('p', {
-                            key: 'desc',
-                            className: 'mt-4 text-gray-700 leading-relaxed'
-                        }, call.short_description.substring(0, 300) + (call.short_description.length > 300 ? '...' : '')),
-
-                        // Technologies
-                        call.technologies && call.technologies.length > 0 &&
-                        React.createElement('div', {
-                            key: 'tech',
-                            className: 'mt-4'
-                        }, [
-                            React.createElement('div', {
-                                key: 'label',
-                                className: 'text-xs font-semibold text-gray-500 mb-2'
-                            }, '🔬 TECHNOLOGIES'),
-                            React.createElement('div', {
-                                key: 'list',
-                                className: 'flex flex-wrap gap-2'
-                            }, call.technologies.slice(0, 8).map((tech, i) =>
-                                React.createElement('span', {
-                                    key: i,
-                                    className: 'px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-200'
-                                }, tech)
-                            ))
-                        ]),
-
-                        // Marchés
-                        call.markets && call.markets.length > 0 &&
-                        React.createElement('div', {
-                            key: 'markets',
-                            className: 'mt-3'
-                        }, [
-                            React.createElement('div', {
-                                key: 'label',
-                                className: 'text-xs font-semibold text-gray-500 mb-2'
-                            }, '🏢 MARCHÉS'),
-                            React.createElement('div', {
-                                key: 'list',
-                                className: 'flex flex-wrap gap-2'
-                            }, call.markets.slice(0, 6).map((market, i) =>
-                                React.createElement('span', {
-                                    key: i,
-                                    className: 'px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full border border-green-200'
-                                }, market)
-                            ))
-                        ]),
-
-                        // Dates et liens
-                        React.createElement('div', {
-                            key: 'footer',
-                            className: 'mt-6 pt-4 border-t border-gray-200 flex flex-wrap gap-4 items-center justify-between'
-                        }, [
-                            // Date
-                            call.closing_date && React.createElement('div', {
-                                key: 'date',
-                                className: 'flex items-center gap-2 text-sm'
-                            }, [
-                                React.createElement('span', { key: 'icon', className: 'text-red-500 font-bold' }, '🗓️'),
-                                React.createElement('span', {
-                                    key: 'text',
-                                    className: 'font-semibold text-red-600'
-                                }, 'Clôture : ' + new Date(call.closing_date).toLocaleDateString('fr-FR', {
-                                    day: 'numeric',
-                                    month: 'long',
-                                    year: 'numeric'
-                                }))
-                            ]),
-
-                            // Liens
-                            React.createElement('div', {
-                                key: 'links',
-                                className: 'flex gap-3'
-                            }, [
-                                call.official_url && React.createElement('a', {
-                                    key: 'official',
-                                    href: call.official_url,
-                                    target: '_blank',
-                                    rel: 'noopener noreferrer',
-                                    className: 'px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors'
-                                }, '📄 Plus d\'infos'),
-                                call.application_url && React.createElement('a', {
-                                    key: 'apply',
-                                    href: call.application_url,
-                                    target: '_blank',
-                                    rel: 'noopener noreferrer',
-                                    className: 'px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors'
-                                }, '✅ Candidater')
-                            ])
-                        ])
-                    ])
-                )),
+                    }, cardElements);
+                })),
 
                 // Pagination
                 data.totalPages > 1 && React.createElement('div', {
                     key: 'pagination',
-                    className: 'flex items-center justify-center gap-4 mt-8 pt-6 border-t border-gray-200'
+                    className: 'flex items-center justify-center gap-4 mt-8 pt-6 border-t'
                 }, [
                     React.createElement('button', {
                         key: 'prev',
-                        onClick: () => setPage(p => Math.max(0, p - 1)),
+                        onClick: function() { 
+                            setPage(function(p) { return Math.max(0, p - 1); }); 
+                        },
                         disabled: page === 0,
-                        className: `px-4 py-2 rounded-lg font-medium transition-colors ${
-                            page === 0
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`
+                        className: page === 0 ? 
+                            'px-4 py-2 rounded-lg bg-gray-100 text-gray-400 cursor-not-allowed' :
+                            'px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700'
                     }, '← Précédent'),
                     React.createElement('span', {
                         key: 'info',
-                        className: 'text-sm text-gray-600 font-medium'
-                    }, `Page ${page + 1} sur ${data.totalPages}`),
+                        className: 'text-sm text-gray-600'
+                    }, 'Page ' + (page + 1) + ' / ' + data.totalPages),
                     React.createElement('button', {
                         key: 'next',
-                        onClick: () => setPage(p => Math.min(data.totalPages - 1, p + 1)),
+                        onClick: function() { 
+                            setPage(function(p) { return Math.min(data.totalPages - 1, p + 1); }); 
+                        },
                         disabled: page >= data.totalPages - 1,
-                        className: `px-4 py-2 rounded-lg font-medium transition-colors ${
-                            page >= data.totalPages - 1
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`
+                        className: page >= data.totalPages - 1 ?
+                            'px-4 py-2 rounded-lg bg-gray-100 text-gray-400 cursor-not-allowed' :
+                            'px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700'
                     }, 'Suivant →')
                 ])
             ]);
         }
 
-        // App wrapper
+        // App
         function App() {
             return React.createElement(
                 QueryClientProvider,
