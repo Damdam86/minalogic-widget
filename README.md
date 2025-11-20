@@ -1,1 +1,0 @@
-# minalogic-widget
