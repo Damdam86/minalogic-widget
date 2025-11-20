@@ -162,7 +162,7 @@
         // Utility: Clean HTML description
         function cleanHtmlDescription(html) {
             if (!html) return '';
-            
+
             return html
                 .replace(/<span class="topicdescriptionkind">([^<]+)<\/span>/gi, '\n\n$1\n')
                 .replace(/<h[1-6][^>]*>([^<]+)<\/h[1-6]>/gi, '\n\n$1\n')
@@ -183,6 +183,35 @@
                 .replace(/ +/g, ' ')
                 .replace(/\n{3,}/g, '\n\n')
                 .trim();
+        }
+
+        // Utility: Parse program field (can be JSON object or array)
+        function parseProgram(programField) {
+            if (!programField) return '';
+
+            // Si c'est déjà une string simple, retourner tel quel
+            if (typeof programField === 'string' && !programField.startsWith('{') && !programField.startsWith('[')) {
+                return programField;
+            }
+
+            try {
+                var parsed = typeof programField === 'string' ? JSON.parse(programField) : programField;
+
+                // Si c'est un tableau, prendre le dernier élément (le plus spécifique)
+                if (Array.isArray(parsed)) {
+                    if (parsed.length === 0) return '';
+                    parsed = parsed[parsed.length - 1];
+                }
+
+                // Extraire la description ou l'abbreviation
+                if (parsed.description) return parsed.description;
+                if (parsed.abbreviation) return parsed.abbreviation;
+
+                return '';
+            } catch (e) {
+                // Si le parsing échoue, retourner tel quel
+                return programField;
+            }
         }
 
         // Hooks personnalisés
@@ -500,7 +529,7 @@
                     call.program && React.createElement('p', {
                         key: 'program',
                         className: 'text-sm text-gray-600'
-                    }, call.program + (call.sub_program ? ' • ' + call.sub_program : ''))
+                    }, parseProgram(call.program) + (call.sub_program ? ' • ' + parseProgram(call.sub_program) : ''))
                 ]),
 
                 call.ai_summary && React.createElement('p', {
@@ -604,7 +633,7 @@
                         call.program && React.createElement('p', {
                             key: 'program',
                             className: 'text-lg text-gray-600'
-                        }, call.program + (call.sub_program ? ' • ' + call.sub_program : '')),
+                        }, parseProgram(call.program) + (call.sub_program ? ' • ' + parseProgram(call.sub_program) : '')),
                         React.createElement('div', {
                             key: 'meta',
                             className: 'flex flex-wrap gap-3 mt-4'
