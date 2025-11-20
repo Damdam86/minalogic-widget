@@ -5,47 +5,96 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Appels à Projets Minalogic</title>
 
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #ffffff;
-            min-height: 100vh;
-        }
-        #root {
-            min-height: 100vh;
-        }
-        .loading {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            font-size: 18px;
-            color: #666;
-        }
-    </style>
-
-    <!-- React & ReactDOM depuis CDN -->
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-    <!-- React Query v3 (meilleure compatibilité UMD) -->
+    <!-- React Query v3 -->
     <script src="https://unpkg.com/react-query@3.39.3/dist/react-query.production.min.js"></script>
 
-    <!-- Supabase JS depuis CDN -->
+    <!-- Supabase -->
     <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 
-    <!-- Tailwind CSS depuis CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 1rem;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 0.5rem;
+            max-width: 56rem;
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 100%;
+        }
+        
+        .dropdown {
+            position: relative;
+        }
+        
+        .dropdown-content {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.375rem;
+            margin-top: 0.25rem;
+            max-height: 16rem;
+            overflow-y: auto;
+            z-index: 10;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .dropdown-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+        }
+        
+        .dropdown-item:hover {
+            background: #f3f4f6;
+        }
+        
+        .popover {
+            position: relative;
+        }
+        
+        .popover-content {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.375rem;
+            margin-top: 0.25rem;
+            padding: 1rem;
+            z-index: 10;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            min-width: 16rem;
+            max-height: 24rem;
+            overflow-y: auto;
+        }
+    </style>
 </head>
 <body>
-    <div id="root">
-        <div class="loading">Chargement des appels à projets...</div>
-    </div>
+    <div id="root"></div>
 
     <script>
         // Configuration Tailwind
@@ -53,28 +102,24 @@
             theme: {
                 extend: {
                     colors: {
-                        primary: {
-                            DEFAULT: 'rgb(59 130 246)',
-                            foreground: 'rgb(255 255 255)',
-                        }
+                        primary: 'rgb(59 130 246)',
+                        secondary: 'rgb(100 116 139)',
+                        destructive: 'rgb(239 68 68)',
                     }
                 }
             }
         };
 
-        // Créer le client Supabase
+        const { useState, useEffect, useRef } = React;
+        const { QueryClient, QueryClientProvider, useQuery } = window.ReactQuery;
         const { createClient } = supabase;
+
+        // Client Supabase
         const supabaseClient = createClient(
             'https://twrkoddafopkjwsggorp.supabase.co',
             'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3cmtvZGRhZm9wa2p3c2dnb3JwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY1MTY1MjUsImV4cCI6MjA2MjA5MjUyNX0.YsaNh1z4RDZwfm2L85siqjc5JUH6Qx3rznZ5F7e_BtQ',
-            {
-                auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-            }
+            { auth: { persistSession: false } }
         );
-
-        // Composant Widget React
-        const { useState } = React;
-        const { QueryClient, QueryClientProvider, useQuery } = window.ReactQuery;
 
         const queryClient = new QueryClient({
             defaultOptions: {
@@ -86,193 +131,866 @@
             }
         });
 
-        // Hook pour récupérer les AAP
-        function useProjectCalls(page, pageSize) {
-            if (!page) page = 0;
-            if (!pageSize) pageSize = 20;
+        // Hooks personnalisés
+        function useProjectCalls(params) {
+            const { callType, status, source, searchQuery, technologies, markets, page, pageSize } = params;
             
-            return useQuery(['project-calls', page], async function() {
-                const result = await supabaseClient
+            return useQuery(['project-calls', params], async function() {
+                let query = supabaseClient
                     .from('project_calls_normalized_mat')
-                    .select('*', { count: 'exact' })
-                    .eq('status', 'open')
+                    .select('*', { count: 'exact' });
+
+                if (callType) query = query.eq('call_type', callType);
+                if (status) query = query.eq('status', status);
+                if (source) query = query.eq('source', source);
+                if (searchQuery) query = query.ilike('title', '%' + searchQuery + '%');
+                if (technologies && technologies.length > 0) {
+                    query = query.overlaps('technologies', technologies);
+                }
+                if (markets && markets.length > 0) {
+                    query = query.overlaps('markets', markets);
+                }
+
+                const result = await query
                     .order('closing_date', { ascending: true, nullsFirst: false })
                     .range(page * pageSize, (page + 1) * pageSize - 1);
 
                 if (result.error) throw result.error;
-                return { 
-                    calls: result.data || [], 
-                    total: result.count || 0, 
-                    totalPages: Math.ceil((result.count || 0) / pageSize) 
+                
+                return {
+                    calls: result.data || [],
+                    total: result.count || 0,
+                    totalPages: Math.ceil((result.count || 0) / pageSize)
                 };
             });
         }
 
-        // Composant principal
-        function ProjectCallsWidget() {
-            const pageState = useState(0);
-            const page = pageState[0];
-            const setPage = pageState[1];
-            
-            const queryResult = useProjectCalls(page, 20);
-            const data = queryResult.data;
-            const isLoading = queryResult.isLoading;
-            const error = queryResult.error;
+        function useProjectCallStats() {
+            return useQuery(['project-call-stats'], async function() {
+                // Total
+                const totalResult = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('*', { count: 'exact', head: true });
 
-            if (error) {
-                return React.createElement('div', {
-                    className: 'p-8 text-center text-red-600'
-                }, 'Erreur: ' + error.message);
+                // Open
+                const openResult = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('status', 'open');
+
+                // Closing soon (< 30 days)
+                const closingSoonDate = new Date();
+                closingSoonDate.setDate(closingSoonDate.getDate() + 30);
+                const closingSoonResult = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('status', 'open')
+                    .lte('closing_date', closingSoonDate.toISOString());
+
+                // National
+                const nationalResult = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('call_type', 'national');
+
+                // European
+                const europeanResult = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('call_type', 'european');
+
+                return {
+                    total: totalResult.count || 0,
+                    open: openResult.count || 0,
+                    closingSoon: closingSoonResult.count || 0,
+                    national: nationalResult.count || 0,
+                    european: europeanResult.count || 0
+                };
+            });
+        }
+
+        function useProjectCallSources() {
+            return useQuery(['project-call-sources'], async function() {
+                const result = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('source');
+
+                if (result.error) throw result.error;
+                
+                const sources = Array.from(new Set(result.data.map(function(r) { return r.source; }).filter(Boolean)));
+                return sources.sort();
+            });
+        }
+
+        function useProjectCallTechnologyCategories() {
+            return useQuery(['project-call-tech-categories'], async function() {
+                const result = await supabaseClient
+                    .from('project_call_technology_categories')
+                    .select('*')
+                    .order('category');
+
+                if (result.error) throw result.error;
+                return result.data || [];
+            });
+        }
+
+        function useProjectCallMarketCategories() {
+            return useQuery(['project-call-market-categories'], async function() {
+                const result = await supabaseClient
+                    .from('project_call_market_categories')
+                    .select('*')
+                    .order('category');
+
+                if (result.error) throw result.error;
+                return result.data || [];
+            });
+        }
+
+        // Utility functions
+        function formatDate(dateString) {
+            if (!dateString) return 'Non spécifié';
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                });
+            } catch (e) {
+                return dateString;
             }
+        }
 
-            if (isLoading) {
-                return React.createElement('div', {
-                    className: 'p-8 text-center text-gray-600'
-                }, 'Chargement...');
-            }
-
-            if (!data || !data.calls || data.calls.length === 0) {
-                return React.createElement('div', {
-                    className: 'p-8 text-center text-gray-600'
-                }, 'Aucun appel à projet ouvert');
-            }
-
+        // Components
+        function StatCard({ title, value, icon, color }) {
             return React.createElement('div', {
-                className: 'w-full max-w-7xl mx-auto p-6 space-y-6'
+                className: 'bg-white rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow'
             }, [
-                // Titre
                 React.createElement('div', {
-                    key: 'header',
-                    className: 'text-center space-y-2 mb-8'
+                    key: 'content',
+                    className: 'flex items-center justify-between'
                 }, [
-                    React.createElement('h1', {
-                        key: 'title',
-                        className: 'text-4xl font-bold text-gray-900'
-                    }, 'Appels à Projets'),
-                    React.createElement('p', {
-                        key: 'subtitle',
-                        className: 'text-lg text-gray-600'
-                    }, data.total + ' appels à projets ouverts')
-                ]),
-
-                // Liste
-                React.createElement('div', {
-                    key: 'list',
-                    className: 'space-y-6'
-                }, data.calls.map(function(call) {
-                    var badgeClass = 'px-3 py-1 rounded-full text-sm font-semibold ';
-                    var badgeText = '';
-                    
-                    if (call.call_type === 'european') {
-                        badgeClass += 'bg-blue-500 text-white';
-                        badgeText = '🇪🇺 Européen';
-                    } else if (call.call_type === 'national') {
-                        badgeClass += 'bg-green-500 text-white';
-                        badgeText = '🇫🇷 National';
-                    } else {
-                        badgeClass += 'bg-purple-500 text-white';
-                        badgeText = '📍 Régional';
-                    }
-
-                    var cardElements = [
-                        React.createElement('span', {
-                            key: 'badge',
-                            className: badgeClass
-                        }, badgeText),
-                        React.createElement('h2', {
+                    React.createElement('div', { key: 'text' }, [
+                        React.createElement('p', {
                             key: 'title',
-                            className: 'text-2xl font-bold text-gray-900 mt-3'
-                        }, call.title)
-                    ];
-
-                    if (call.program) {
-                        cardElements.push(React.createElement('p', {
-                            key: 'program',
-                            className: 'text-sm text-gray-600 mt-2'
-                        }, call.program));
-                    }
-
-                    if (call.short_description) {
-                        var desc = call.short_description.substring(0, 300);
-                        if (call.short_description.length > 300) desc += '...';
-                        cardElements.push(React.createElement('p', {
-                            key: 'desc',
-                            className: 'mt-4 text-gray-700'
-                        }, desc));
-                    }
-
-                    if (call.closing_date) {
-                        cardElements.push(React.createElement('div', {
-                            key: 'date',
-                            className: 'mt-4 text-red-600 font-semibold'
-                        }, '🗓️ Clôture : ' + new Date(call.closing_date).toLocaleDateString('fr-FR', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric'
-                        })));
-                    }
-
-                    if (call.official_url) {
-                        cardElements.push(React.createElement('a', {
-                            key: 'link',
-                            href: call.official_url,
-                            target: '_blank',
-                            rel: 'noopener noreferrer',
-                            className: 'inline-block mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700'
-                        }, '📄 Plus d\'infos'));
-                    }
-
-                    return React.createElement('div', {
-                        key: call.id,
-                        className: 'bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow border border-gray-200'
-                    }, cardElements);
-                })),
-
-                // Pagination
-                data.totalPages > 1 && React.createElement('div', {
-                    key: 'pagination',
-                    className: 'flex items-center justify-center gap-4 mt-8 pt-6 border-t'
-                }, [
-                    React.createElement('button', {
-                        key: 'prev',
-                        onClick: function() { 
-                            setPage(function(p) { return Math.max(0, p - 1); }); 
-                        },
-                        disabled: page === 0,
-                        className: page === 0 ? 
-                            'px-4 py-2 rounded-lg bg-gray-100 text-gray-400 cursor-not-allowed' :
-                            'px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700'
-                    }, '← Précédent'),
-                    React.createElement('span', {
-                        key: 'info',
-                        className: 'text-sm text-gray-600'
-                    }, 'Page ' + (page + 1) + ' / ' + data.totalPages),
-                    React.createElement('button', {
-                        key: 'next',
-                        onClick: function() { 
-                            setPage(function(p) { return Math.min(data.totalPages - 1, p + 1); }); 
-                        },
-                        disabled: page >= data.totalPages - 1,
-                        className: page >= data.totalPages - 1 ?
-                            'px-4 py-2 rounded-lg bg-gray-100 text-gray-400 cursor-not-allowed' :
-                            'px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700'
-                    }, 'Suivant →')
+                            className: 'text-sm font-medium text-gray-600'
+                        }, title),
+                        React.createElement('h3', {
+                            key: 'value',
+                            className: 'text-2xl font-bold text-' + color + '-600 mt-1'
+                        }, value)
+                    ]),
+                    React.createElement('div', {
+                        key: 'icon',
+                        className: 'text-' + color + '-600 opacity-20 text-4xl'
+                    }, icon)
                 ])
             ]);
         }
 
-        // App
-        function App() {
-            return React.createElement(
-                QueryClientProvider,
-                { client: queryClient },
-                React.createElement(ProjectCallsWidget)
+        function Select({ value, onChange, options, placeholder }) {
+            const selectRef = useRef(null);
+            const openState = useState(false);
+            const isOpen = openState[0];
+            const setIsOpen = openState[1];
+
+            useEffect(function() {
+                function handleClickOutside(event) {
+                    if (selectRef.current && !selectRef.current.contains(event.target)) {
+                        setIsOpen(false);
+                    }
+                }
+                document.addEventListener('mousedown', handleClickOutside);
+                return function() {
+                    document.removeEventListener('mousedown', handleClickOutside);
+                };
+            }, []);
+
+            const selectedOption = options.find(function(opt) { return opt.value === value; });
+
+            return React.createElement('div', {
+                ref: selectRef,
+                className: 'dropdown relative'
+            }, [
+                React.createElement('button', {
+                    key: 'trigger',
+                    type: 'button',
+                    className: 'w-full px-3 py-2 text-left border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500',
+                    onClick: function() { setIsOpen(!isOpen); }
+                }, selectedOption ? selectedOption.label : placeholder),
+                isOpen && React.createElement('div', {
+                    key: 'content',
+                    className: 'dropdown-content'
+                }, options.map(function(option) {
+                    return React.createElement('div', {
+                        key: option.value,
+                        className: 'dropdown-item' + (value === option.value ? ' bg-blue-50' : ''),
+                        onClick: function() {
+                            onChange(option.value);
+                            setIsOpen(false);
+                        }
+                    }, option.label);
+                }))
+            ]);
+        }
+
+        function CategoryPopover({ title, icon, categories, selectedCategories, onToggle }) {
+            const popoverRef = useRef(null);
+            const openState = useState(false);
+            const isOpen = openState[0];
+            const setIsOpen = openState[1];
+
+            useEffect(function() {
+                function handleClickOutside(event) {
+                    if (popoverRef.current && !popoverRef.current.contains(event.target)) {
+                        setIsOpen(false);
+                    }
+                }
+                document.addEventListener('mousedown', handleClickOutside);
+                return function() {
+                    document.removeEventListener('mousedown', handleClickOutside);
+                };
+            }, []);
+
+            return React.createElement('div', {
+                ref: popoverRef,
+                className: 'popover relative'
+            }, [
+                React.createElement('button', {
+                    key: 'trigger',
+                    type: 'button',
+                    className: 'w-full px-3 py-2 text-left border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center gap-2',
+                    onClick: function() { setIsOpen(!isOpen); }
+                }, [
+                    React.createElement('span', { key: 'icon', className: 'text-lg' }, icon),
+                    React.createElement('span', { key: 'text' }, 
+                        selectedCategories.length > 0
+                            ? selectedCategories.length + ' catégorie' + (selectedCategories.length > 1 ? 's' : '')
+                            : title
+                    )
+                ]),
+                isOpen && React.createElement('div', {
+                    key: 'content',
+                    className: 'popover-content'
+                }, [
+                    React.createElement('div', {
+                        key: 'title',
+                        className: 'text-sm font-semibold mb-2'
+                    }, title),
+                    React.createElement('div', {
+                        key: 'list',
+                        className: 'space-y-2'
+                    }, categories.map(function(cat) {
+                        const isSelected = selectedCategories.includes(cat.category);
+                        return React.createElement('label', {
+                            key: cat.category,
+                            className: 'flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded'
+                        }, [
+                            React.createElement('input', {
+                                key: 'checkbox',
+                                type: 'checkbox',
+                                checked: isSelected,
+                                onChange: function() { onToggle(cat.category); },
+                                className: 'rounded border-gray-300'
+                            }),
+                            React.createElement('span', {
+                                key: 'label',
+                                className: 'text-sm'
+                            }, cat.category + ' (' + cat.count + ')')
+                        ]);
+                    }))
+                ])
+            ]);
+        }
+
+        function ProjectCallCard({ call, onClick }) {
+            const getTypeBadge = function(type) {
+                if (type === 'european') return { label: 'Européen', color: 'bg-blue-500' };
+                if (type === 'national') return { label: 'National', color: 'bg-green-500' };
+                return { label: 'Régional', color: 'bg-purple-500' };
+            };
+
+            const getStatusBadge = function(status) {
+                if (status === 'open') return { label: 'Ouvert', color: 'bg-green-600' };
+                if (status === 'closed') return { label: 'Fermé', color: 'bg-red-600' };
+                if (status === 'forthcoming') return { label: 'À venir', color: 'bg-yellow-600' };
+                return { label: 'Inconnu', color: 'bg-gray-600' };
+            };
+
+            const typeBadge = getTypeBadge(call.call_type);
+            const statusBadge = getStatusBadge(call.status);
+
+            return React.createElement('div', {
+                className: 'bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer p-6',
+                onClick: onClick
+            }, [
+                // Header
+                React.createElement('div', { key: 'header', className: 'space-y-3 mb-4' }, [
+                    React.createElement('div', {
+                        key: 'badges',
+                        className: 'flex flex-wrap gap-2'
+                    }, [
+                        React.createElement('span', {
+                            key: 'type',
+                            className: typeBadge.color + ' text-white px-3 py-1 rounded-full text-sm font-semibold'
+                        }, typeBadge.label),
+                        React.createElement('span', {
+                            key: 'status',
+                            className: statusBadge.color + ' text-white px-3 py-1 rounded-full text-sm font-semibold'
+                        }, statusBadge.label),
+                        call.source && React.createElement('span', {
+                            key: 'source',
+                            className: 'bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm border border-gray-300'
+                        }, '🏢 ' + call.source)
+                    ]),
+                    React.createElement('h2', {
+                        key: 'title',
+                        className: 'text-2xl font-bold text-gray-900'
+                    }, call.title),
+                    call.program && React.createElement('p', {
+                        key: 'program',
+                        className: 'text-sm text-gray-600'
+                    }, call.program + (call.sub_program ? ' • ' + call.sub_program : ''))
+                ]),
+
+                // Summary
+                call.ai_summary && React.createElement('p', {
+                    key: 'summary',
+                    className: 'text-gray-700 mb-4 line-clamp-2'
+                }, call.ai_summary),
+
+                // Technologies & Markets
+                React.createElement('div', {
+                    key: 'tags',
+                    className: 'flex flex-wrap gap-2 mb-4'
+                }, [
+                    call.technologies && call.technologies.length > 0 && React.createElement('div', {
+                        key: 'tech',
+                        className: 'flex items-center gap-1 flex-wrap'
+                    }, [
+                        React.createElement('span', { key: 'icon', className: 'text-blue-600' }, '🔬'),
+                        call.technologies.slice(0, 3).map(function(tech) {
+                            return React.createElement('span', {
+                                key: tech,
+                                className: 'bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs border border-blue-200'
+                            }, tech);
+                        }),
+                        call.technologies.length > 3 && React.createElement('span', {
+                            key: 'more',
+                            className: 'bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs'
+                        }, '+' + (call.technologies.length - 3))
+                    ]),
+                    call.markets && call.markets.length > 0 && React.createElement('div', {
+                        key: 'markets',
+                        className: 'flex items-center gap-1 flex-wrap'
+                    }, [
+                        React.createElement('span', { key: 'icon', className: 'text-green-600' }, '🏢'),
+                        call.markets.slice(0, 2).map(function(market) {
+                            return React.createElement('span', {
+                                key: market,
+                                className: 'bg-green-50 text-green-700 px-2 py-1 rounded text-xs border border-green-200'
+                            }, market);
+                        }),
+                        call.markets.length > 2 && React.createElement('span', {
+                            key: 'more',
+                            className: 'bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs'
+                        }, '+' + (call.markets.length - 2))
+                    ])
+                ]),
+
+                // Dates
+                React.createElement('div', {
+                    key: 'dates',
+                    className: 'flex flex-wrap gap-4 text-sm text-gray-600 border-t pt-4'
+                }, [
+                    call.closing_date && React.createElement('div', {
+                        key: 'closing',
+                        className: 'flex items-center gap-1'
+                    }, [
+                        React.createElement('span', { key: 'icon' }, '🗓️'),
+                        React.createElement('span', { key: 'text', className: 'font-semibold text-red-600' }, 
+                            'Clôture : ' + formatDate(call.closing_date)
+                        )
+                    ]),
+                    call.opening_date && React.createElement('div', {
+                        key: 'opening',
+                        className: 'flex items-center gap-1'
+                    }, [
+                        React.createElement('span', { key: 'icon' }, '📅'),
+                        React.createElement('span', { key: 'text' }, 
+                            'Ouverture : ' + formatDate(call.opening_date)
+                        )
+                    ]),
+                    call.official_url && React.createElement('a', {
+                        key: 'link',
+                        href: call.official_url,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'ml-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold text-sm',
+                        onClick: function(e) { e.stopPropagation(); }
+                    }, '📄 Plus d\'infos →')
+                ])
+            ]);
+        }
+
+        function Modal({ call, onClose }) {
+            if (!call) return null;
+
+            return React.createElement('div', {
+                className: 'modal-overlay',
+                onClick: onClose
+            }, 
+                React.createElement('div', {
+                    className: 'modal-content',
+                    onClick: function(e) { e.stopPropagation(); }
+                }, [
+                    React.createElement('div', { key: 'header', className: 'p-6 border-b' }, [
+                        React.createElement('h2', {
+                            key: 'title',
+                            className: 'text-2xl font-bold text-gray-900 mb-2'
+                        }, call.title),
+                        call.program && React.createElement('p', {
+                            key: 'program',
+                            className: 'text-gray-600'
+                        }, call.program + (call.sub_program ? ' • ' + call.sub_program : ''))
+                    ]),
+                    React.createElement('div', { key: 'body', className: 'p-6 space-y-4' }, [
+                        call.ai_summary && React.createElement('div', { key: 'summary' }, [
+                            React.createElement('h3', {
+                                key: 'title',
+                                className: 'font-semibold text-lg mb-2'
+                            }, 'Résumé'),
+                            React.createElement('p', {
+                                key: 'text',
+                                className: 'text-gray-700'
+                            }, call.ai_summary)
+                        ]),
+                        call.short_description && React.createElement('div', { key: 'desc' }, [
+                            React.createElement('h3', {
+                                key: 'title',
+                                className: 'font-semibold text-lg mb-2'
+                            }, 'Description'),
+                            React.createElement('p', {
+                                key: 'text',
+                                className: 'text-gray-700 whitespace-pre-wrap'
+                            }, call.short_description)
+                        ]),
+                        call.official_url && React.createElement('a', {
+                            key: 'link',
+                            href: call.official_url,
+                            target: '_blank',
+                            rel: 'noopener noreferrer',
+                            className: 'inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold'
+                        }, '📄 Voir l\'appel complet →')
+                    ]),
+                    React.createElement('div', { key: 'footer', className: 'p-6 border-t flex justify-end' },
+                        React.createElement('button', {
+                            onClick: onClose,
+                            className: 'px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-semibold'
+                        }, 'Fermer')
+                    )
+                ])
             );
+        }
+
+        // Main App Component
+        function App() {
+            const pageState = useState(0);
+            const page = pageState[0];
+            const setPage = pageState[1];
+
+            const searchState = useState('');
+            const searchQuery = searchState[0];
+            const setSearchQuery = searchState[1];
+
+            const callTypeState = useState(undefined);
+            const callType = callTypeState[0];
+            const setCallType = callTypeState[1];
+
+            const statusState = useState('open');
+            const status = statusState[0];
+            const setStatus = statusState[1];
+
+            const sourceState = useState(undefined);
+            const source = sourceState[0];
+            const setSource = sourceState[1];
+
+            const selectedTechCatsState = useState([]);
+            const selectedTechCategories = selectedTechCatsState[0];
+            const setSelectedTechCategories = selectedTechCatsState[1];
+
+            const selectedMarketCatsState = useState([]);
+            const selectedMarketCategories = selectedMarketCatsState[0];
+            const setSelectedMarketCategories = selectedMarketCatsState[1];
+
+            const selectedTechsState = useState([]);
+            const selectedTechnologies = selectedTechsState[0];
+            const setSelectedTechnologies = selectedTechsState[1];
+
+            const selectedMarketsState = useState([]);
+            const selectedMarkets = selectedMarketsState[0];
+            const setSelectedMarkets = selectedMarketsState[1];
+
+            const selectedCallState = useState(null);
+            const selectedCall = selectedCallState[0];
+            const setSelectedCall = selectedCallState[1];
+
+            const statsQuery = useProjectCallStats();
+            const stats = statsQuery.data;
+
+            const sourcesQuery = useProjectCallSources();
+            const sources = sourcesQuery.data;
+
+            const techCatsQuery = useProjectCallTechnologyCategories();
+            const techCategories = techCatsQuery.data;
+
+            const marketCatsQuery = useProjectCallMarketCategories();
+            const marketCategories = marketCatsQuery.data;
+
+            const callsQuery = useProjectCalls({
+                callType: callType,
+                status: status,
+                source: source,
+                searchQuery: searchQuery,
+                technologies: selectedTechnologies.length > 0 ? selectedTechnologies : undefined,
+                markets: selectedMarkets.length > 0 ? selectedMarkets : undefined,
+                page: page,
+                pageSize: 20
+            });
+            const data = callsQuery.data;
+            const isLoading = callsQuery.isLoading;
+
+            const toggleTechCategory = function(category) {
+                const catData = techCategories.find(function(c) { return c.category === category; });
+                if (!catData) return;
+
+                if (selectedTechCategories.includes(category)) {
+                    setSelectedTechCategories(selectedTechCategories.filter(function(c) { return c !== category; }));
+                    setSelectedTechnologies(selectedTechnologies.filter(function(t) {
+                        return !catData.terms.includes(t);
+                    }));
+                } else {
+                    setSelectedTechCategories(selectedTechCategories.concat([category]));
+                    const newTerms = catData.terms.filter(function(t) {
+                        return !selectedTechnologies.includes(t);
+                    });
+                    setSelectedTechnologies(selectedTechnologies.concat(newTerms));
+                }
+                setPage(0);
+            };
+
+            const toggleMarketCategory = function(category) {
+                const catData = marketCategories.find(function(c) { return c.category === category; });
+                if (!catData) return;
+
+                if (selectedMarketCategories.includes(category)) {
+                    setSelectedMarketCategories(selectedMarketCategories.filter(function(c) { return c !== category; }));
+                    setSelectedMarkets(selectedMarkets.filter(function(m) {
+                        return !catData.terms.includes(m);
+                    }));
+                } else {
+                    setSelectedMarketCategories(selectedMarketCategories.concat([category]));
+                    const newTerms = catData.terms.filter(function(m) {
+                        return !selectedMarkets.includes(m);
+                    });
+                    setSelectedMarkets(selectedMarkets.concat(newTerms));
+                }
+                setPage(0);
+            };
+
+            const clearAllFilters = function() {
+                setSelectedTechnologies([]);
+                setSelectedMarkets([]);
+                setSelectedTechCategories([]);
+                setSelectedMarketCategories([]);
+                setSearchQuery('');
+                setCallType(undefined);
+                setSource(undefined);
+                setPage(0);
+            };
+
+            return React.createElement('div', {
+                className: 'min-h-screen bg-gradient-to-br from-gray-50 to-blue-50'
+            }, [
+                React.createElement('div', {
+                    key: 'container',
+                    className: 'container mx-auto p-6 space-y-6'
+                }, [
+                    // Header
+                    React.createElement('div', {
+                        key: 'header',
+                        className: 'flex items-center gap-3 mb-6'
+                    }, [
+                        React.createElement('div', {
+                            key: 'icon',
+                            className: 'p-2 bg-blue-100 rounded-lg text-4xl'
+                        }, '🌍'),
+                        React.createElement('div', { key: 'text' }, [
+                            React.createElement('h1', {
+                                key: 'title',
+                                className: 'text-3xl font-bold text-gray-900'
+                            }, 'Appels à Projets'),
+                            React.createElement('p', {
+                                key: 'subtitle',
+                                className: 'text-gray-600'
+                            }, 'Tous les AAP nationaux, européens et régionaux • Powered by AI')
+                        ])
+                    ]),
+
+                    // Stats Cards
+                    stats && React.createElement('div', {
+                        key: 'stats',
+                        className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4'
+                    }, [
+                        React.createElement(StatCard, {
+                            key: 'total',
+                            title: 'Total AAP',
+                            value: stats.total,
+                            icon: '📄',
+                            color: 'blue'
+                        }),
+                        React.createElement(StatCard, {
+                            key: 'open',
+                            title: 'Ouverts',
+                            value: stats.open,
+                            icon: '✅',
+                            color: 'green'
+                        }),
+                        React.createElement(StatCard, {
+                            key: 'closing',
+                            title: 'Clôture < 30j',
+                            value: stats.closingSoon,
+                            icon: '⏰',
+                            color: 'orange'
+                        }),
+                        React.createElement(StatCard, {
+                            key: 'national',
+                            title: 'Nationaux',
+                            value: stats.national,
+                            icon: '🇫🇷',
+                            color: 'purple'
+                        }),
+                        React.createElement(StatCard, {
+                            key: 'european',
+                            title: 'Européens',
+                            value: stats.european,
+                            icon: '🇪🇺',
+                            color: 'pink'
+                        })
+                    ]),
+
+                    // Filters
+                    React.createElement('div', {
+                        key: 'filters',
+                        className: 'bg-white rounded-lg shadow-sm p-6'
+                    }, [
+                        React.createElement('h2', {
+                            key: 'title',
+                            className: 'text-lg font-semibold mb-4 flex items-center gap-2'
+                        }, ['🔍 ', 'Filtres']),
+                        React.createElement('div', {
+                            key: 'grid',
+                            className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4'
+                        }, [
+                            React.createElement('input', {
+                                key: 'search',
+                                type: 'text',
+                                placeholder: '🔍 Rechercher...',
+                                value: searchQuery,
+                                onChange: function(e) { 
+                                    setSearchQuery(e.target.value);
+                                    setPage(0);
+                                },
+                                className: 'px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
+                            }),
+                            React.createElement(Select, {
+                                key: 'type',
+                                value: callType || 'all',
+                                onChange: function(val) { 
+                                    setCallType(val === 'all' ? undefined : val);
+                                    setPage(0);
+                                },
+                                placeholder: 'Type d\'appel',
+                                options: [
+                                    { value: 'all', label: 'Tous les types' },
+                                    { value: 'national', label: 'National' },
+                                    { value: 'european', label: 'Européen' },
+                                    { value: 'regional', label: 'Régional' }
+                                ]
+                            }),
+                            React.createElement(Select, {
+                                key: 'status',
+                                value: status,
+                                onChange: function(val) { 
+                                    setStatus(val);
+                                    setPage(0);
+                                },
+                                placeholder: 'Statut',
+                                options: [
+                                    { value: 'open', label: 'Ouvert' },
+                                    { value: 'closed', label: 'Fermé' },
+                                    { value: 'forthcoming', label: 'À venir' },
+                                    { value: 'unknown', label: 'Inconnu' }
+                                ]
+                            }),
+                            sources && React.createElement(Select, {
+                                key: 'source',
+                                value: source || 'all',
+                                onChange: function(val) { 
+                                    setSource(val === 'all' ? undefined : val);
+                                    setPage(0);
+                                },
+                                placeholder: 'Source',
+                                options: [{ value: 'all', label: 'Toutes les sources' }].concat(
+                                    sources.map(function(s) {
+                                        return { value: s, label: s };
+                                    })
+                                )
+                            }),
+                            techCategories && React.createElement(CategoryPopover, {
+                                key: 'tech',
+                                title: 'Technologies',
+                                icon: '🔬',
+                                categories: techCategories,
+                                selectedCategories: selectedTechCategories,
+                                onToggle: toggleTechCategory
+                            }),
+                            marketCategories && React.createElement(CategoryPopover, {
+                                key: 'markets',
+                                title: 'Marchés',
+                                icon: '🎯',
+                                categories: marketCategories,
+                                selectedCategories: selectedMarketCategories,
+                                onToggle: toggleMarketCategory
+                            })
+                        ]),
+                        (selectedTechCategories.length > 0 || selectedMarketCategories.length > 0) && React.createElement('div', {
+                            key: 'active-filters',
+                            className: 'flex flex-wrap gap-2 items-center border-t pt-4'
+                        }, [
+                            React.createElement('span', {
+                                key: 'label',
+                                className: 'text-sm font-semibold text-gray-600'
+                            }, 'Filtres actifs :'),
+                            selectedTechCategories.map(function(cat) {
+                                return React.createElement('span', {
+                                    key: cat,
+                                    className: 'bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1'
+                                }, [
+                                    React.createElement('span', { key: 'icon' }, '🔬'),
+                                    React.createElement('span', { key: 'text' }, cat),
+                                    React.createElement('button', {
+                                        key: 'remove',
+                                        onClick: function() { toggleTechCategory(cat); },
+                                        className: 'ml-1 text-blue-600 hover:text-blue-800'
+                                    }, '×')
+                                ]);
+                            }),
+                            selectedMarketCategories.map(function(cat) {
+                                return React.createElement('span', {
+                                    key: cat,
+                                    className: 'bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1'
+                                }, [
+                                    React.createElement('span', { key: 'icon' }, '🎯'),
+                                    React.createElement('span', { key: 'text' }, cat),
+                                    React.createElement('button', {
+                                        key: 'remove',
+                                        onClick: function() { toggleMarketCategory(cat); },
+                                        className: 'ml-1 text-green-600 hover:text-green-800'
+                                    }, '×')
+                                ]);
+                            }),
+                            React.createElement('button', {
+                                key: 'clear',
+                                onClick: clearAllFilters,
+                                className: 'px-3 py-1 bg-gray-200 text-gray-800 rounded-full text-sm font-semibold hover:bg-gray-300'
+                            }, 'Tout effacer')
+                        ]),
+                        data && React.createElement('div', {
+                            key: 'count',
+                            className: 'text-sm text-gray-600 mt-2'
+                        }, data.total + ' résultat' + (data.total > 1 ? 's' : ''))
+                    ]),
+
+                    // Results
+                    isLoading ? React.createElement('div', {
+                        key: 'loading',
+                        className: 'text-center py-12 text-gray-600'
+                    }, 'Chargement...') : data && data.calls.length > 0 ? React.createElement('div', {
+                        key: 'results',
+                        className: 'space-y-4'
+                    }, [
+                        data.calls.map(function(call) {
+                            return React.createElement(ProjectCallCard, {
+                                key: call.id,
+                                call: call,
+                                onClick: function() { setSelectedCall(call); }
+                            });
+                        }),
+                        data.totalPages > 1 && React.createElement('div', {
+                            key: 'pagination',
+                            className: 'flex items-center justify-center gap-4 mt-8'
+                        }, [
+                            React.createElement('button', {
+                                key: 'prev',
+                                onClick: function() { setPage(page - 1); },
+                                disabled: page === 0,
+                                className: 'px-4 py-2 rounded-lg font-medium ' + (
+                                    page === 0
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                )
+                            }, '← Précédent'),
+                            React.createElement('span', {
+                                key: 'info',
+                                className: 'text-sm text-gray-600'
+                            }, 'Page ' + (page + 1) + ' / ' + data.totalPages),
+                            React.createElement('button', {
+                                key: 'next',
+                                onClick: function() { setPage(page + 1); },
+                                disabled: page >= data.totalPages - 1,
+                                className: 'px-4 py-2 rounded-lg font-medium ' + (
+                                    page >= data.totalPages - 1
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                )
+                            }, 'Suivant →')
+                        ])
+                    ]) : React.createElement('div', {
+                        key: 'empty',
+                        className: 'bg-white rounded-lg p-12 text-center'
+                    }, [
+                        React.createElement('div', {
+                            key: 'icon',
+                            className: 'text-6xl mb-4'
+                        }, '🔍'),
+                        React.createElement('p', {
+                            key: 'text',
+                            className: 'text-lg font-medium text-gray-900'
+                        }, 'Aucun appel à projets trouvé'),
+                        React.createElement('p', {
+                            key: 'hint',
+                            className: 'text-sm text-gray-600 mt-2'
+                        }, 'Essayez de modifier vos filtres')
+                    ])
+                ]),
+
+                // Modal
+                selectedCall && React.createElement(Modal, {
+                    key: 'modal',
+                    call: selectedCall,
+                    onClose: function() { setSelectedCall(null); }
+                })
+            ]);
         }
 
         // Render
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(React.createElement(App));
+        root.render(
+            React.createElement(QueryClientProvider, { client: queryClient },
+                React.createElement(App)
+            )
+        );
     </script>
 </body>
 </html>
