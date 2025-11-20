@@ -302,25 +302,125 @@
 
         function useProjectCallTechnologyCategories() {
             return useQuery(['project-call-tech-categories'], async function() {
-                const result = await supabaseClient
-                    .from('project_call_technology_categories')
-                    .select('*')
-                    .order('category');
+                // Get open calls with normalized technologies
+                var callsResult = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('technologies_normalized')
+                    .eq('status', 'open');
 
-                if (result.error) throw result.error;
-                return result.data || [];
+                if (callsResult.error) throw callsResult.error;
+
+                // Get normalization table
+                var normResult = await supabaseClient
+                    .from('technology_normalization')
+                    .select('normalized_term, category');
+
+                if (normResult.error) throw normResult.error;
+
+                // Count occurrences of each term in calls
+                var termCounts = {};
+                for (var i = 0; i < callsResult.data.length; i++) {
+                    var call = callsResult.data[i];
+                    var techs = call.technologies_normalized || [];
+                    for (var j = 0; j < techs.length; j++) {
+                        var tech = techs[j];
+                        termCounts[tech] = (termCounts[tech] || 0) + 1;
+                    }
+                }
+
+                // Group by category
+                var categoryMap = {};
+                for (var k = 0; k < normResult.data.length; k++) {
+                    var norm = normResult.data[k];
+                    var count = termCounts[norm.normalized_term] || 0;
+                    if (count > 0) {
+                        var category = norm.category || 'Autres';
+                        if (!categoryMap[category]) {
+                            categoryMap[category] = { terms: [], count: 0 };
+                        }
+                        if (categoryMap[category].terms.indexOf(norm.normalized_term) === -1) {
+                            categoryMap[category].terms.push(norm.normalized_term);
+                        }
+                        categoryMap[category].count += count;
+                    }
+                }
+
+                // Convert to array and sort by count
+                var categories = [];
+                for (var cat in categoryMap) {
+                    if (categoryMap.hasOwnProperty(cat)) {
+                        categories.push({
+                            category: cat,
+                            terms: categoryMap[cat].terms.sort(),
+                            count: categoryMap[cat].count
+                        });
+                    }
+                }
+                categories.sort(function(a, b) { return b.count - a.count; });
+
+                return categories;
             });
         }
 
         function useProjectCallMarketCategories() {
             return useQuery(['project-call-market-categories'], async function() {
-                const result = await supabaseClient
-                    .from('project_call_market_categories')
-                    .select('*')
-                    .order('category');
+                // Get open calls with normalized markets
+                var callsResult = await supabaseClient
+                    .from('project_calls_normalized_mat')
+                    .select('markets_normalized')
+                    .eq('status', 'open');
 
-                if (result.error) throw result.error;
-                return result.data || [];
+                if (callsResult.error) throw callsResult.error;
+
+                // Get normalization table
+                var normResult = await supabaseClient
+                    .from('market_normalization')
+                    .select('normalized_term, category');
+
+                if (normResult.error) throw normResult.error;
+
+                // Count occurrences of each term in calls
+                var termCounts = {};
+                for (var i = 0; i < callsResult.data.length; i++) {
+                    var call = callsResult.data[i];
+                    var markets = call.markets_normalized || [];
+                    for (var j = 0; j < markets.length; j++) {
+                        var market = markets[j];
+                        termCounts[market] = (termCounts[market] || 0) + 1;
+                    }
+                }
+
+                // Group by category
+                var categoryMap = {};
+                for (var k = 0; k < normResult.data.length; k++) {
+                    var norm = normResult.data[k];
+                    var count = termCounts[norm.normalized_term] || 0;
+                    if (count > 0) {
+                        var category = norm.category || 'Autres';
+                        if (!categoryMap[category]) {
+                            categoryMap[category] = { terms: [], count: 0 };
+                        }
+                        if (categoryMap[category].terms.indexOf(norm.normalized_term) === -1) {
+                            categoryMap[category].terms.push(norm.normalized_term);
+                        }
+                        categoryMap[category].count += count;
+                    }
+                }
+
+                // Convert to array and sort by count
+                var categories = [];
+                for (var cat in categoryMap) {
+                    if (categoryMap.hasOwnProperty(cat)) {
+                        categories.push({
+                            category: cat,
+                            terms: categoryMap[cat].terms.sort(),
+                            count: categoryMap[cat].count
+                        });
+                    }
+                }
+                categories.sort(function(a, b) { return b.count - a.count; });
+
+                return categories;
             });
         }
 
