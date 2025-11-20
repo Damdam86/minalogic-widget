@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appels à Projets Minalogic</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #ffffff;
+            min-height: 100vh;
+        }
+        #root {
+            min-height: 100vh;
+        }
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-size: 18px;
+            color: #666;
+        }
+    </style>
+
+    <!-- React & ReactDOM depuis CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- React Query depuis CDN -->
+    <script src="https://unpkg.com/@tanstack/react-query@5.17.0/build/umd/index.production.js"></script>
+
+    <!-- Supabase JS depuis CDN -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
+
+    <!-- Tailwind CSS depuis CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root">
+        <div class="loading">Chargement des appels à projets...</div>
+    </div>
+
+    <script>
+        // Configuration Tailwind
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            DEFAULT: 'rgb(59 130 246)',
+                            foreground: 'rgb(255 255 255)',
+                        }
+                    }
+                }
+            }
+        };
+
+        // Créer le client Supabase
+        const { createClient } = supabase;
+        const supabaseClient = createClient(
+            'https://twrkoddafopkjwsggorp.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3cmtvZGRhZm9wa2p3c2dnb3JwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY1MTY1MjUsImV4cCI6MjA2MjA5MjUyNX0.YsaNh1z4RDZwfm2L85siqjc5JUH6Qx3rznZ5F7e_BtQ',
+            {
+                auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+            }
+        );
+
+        // Composant Widget React
+        const { useState, useEffect } = React;
+        const { QueryClient, QueryClientProvider, useQuery } = window.ReactQuery;
+
+        const queryClient = new QueryClient({
+            defaultOptions: {
+                queries: {
+                    refetchOnWindowFocus: false,
+                    retry: 2,
+                    staleTime: 30000,
+                }
+            }
+        });
+
+        // Hook pour récupérer les AAP
+        function useProjectCalls(page = 0, pageSize = 20) {
+            return useQuery({
+                queryKey: ['project-calls', page],
+                queryFn: async () => {
+                    const { data, error, count } = await supabaseClient
+                        .from('project_calls_normalized_mat')
+                        .select('*', { count: 'exact' })
+                        .eq('status', 'open')
+                        .order('closing_date', { ascending: true, nullsFirst: false })
+                        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+                    if (error) throw error;
+                    return { calls: data || [], total: count || 0, totalPages: Math.ceil((count || 0) / pageSize) };
+                }
+            });
+        }
+
+        // Composant principal
+        function ProjectCallsWidget() {
+            const [page, setPage] = useState(0);
+            const { data, isLoading, error } = useProjectCalls(page, 20);
+
+            if (error) {
+                return React.createElement('div', {
+                    className: 'p-8 text-center text-red-600'
+                }, 'Erreur de chargement: ' + error.message);
+            }
+
+            if (isLoading) {
+                return React.createElement('div', {
+                    className: 'p-8 text-center text-gray-600'
+                }, 'Chargement...');
+            }
+
+            return React.createElement('div', {
+                className: 'w-full max-w-7xl mx-auto p-6 space-y-6'
+            }, [
+                // Titre
+                React.createElement('div', {
+                    key: 'header',
+                    className: 'text-center space-y-2 mb-8'
+                }, [
+                    React.createElement('h1', {
+                        key: 'title',
+                        className: 'text-4xl font-bold text-gray-900'
+                    }, 'Appels à Projets'),
+                    React.createElement('p', {
+                        key: 'subtitle',
+                        className: 'text-lg text-gray-600'
+                    }, `${data.total} appels à projets ouverts`)
+                ]),
+
+                // Liste des AAP
+                React.createElement('div', {
+                    key: 'list',
+                    className: 'space-y-6'
+                }, data.calls.map(call =>
+                    React.createElement('div', {
+                        key: call.id,
+                        className: 'bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow border border-gray-200'
+                    }, [
+                        // En-tête
+                        React.createElement('div', {
+                            key: 'header',
+                            className: 'space-y-3'
+                        }, [
+                            React.createElement('div', {
+                                key: 'badges',
+                                className: 'flex gap-2 flex-wrap'
+                            }, [
+                                React.createElement('span', {
+                                    key: 'type',
+                                    className: `px-3 py-1 rounded-full text-sm font-semibold ${
+                                        call.call_type === 'european' ? 'bg-blue-500 text-white' :
+                                        call.call_type === 'national' ? 'bg-green-500 text-white' :
+                                        'bg-purple-500 text-white'
+                                    }`
+                                }, call.call_type === 'european' ? '🇪🇺 Européen' :
+                                   call.call_type === 'national' ? '🇫🇷 National' : '📍 Régional'),
+                                call.source && React.createElement('span', {
+                                    key: 'source',
+                                    className: 'px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 border border-gray-300'
+                                }, call.source)
+                            ]),
+                            React.createElement('h2', {
+                                key: 'title',
+                                className: 'text-2xl font-bold text-gray-900 leading-tight'
+                            }, call.title),
+                            call.program && React.createElement('p', {
+                                key: 'program',
+                                className: 'text-sm text-gray-600 font-medium'
+                            }, call.program + (call.sub_program ? ' - ' + call.sub_program : ''))
+                        ]),
+
+                        // Description
+                        call.short_description && React.createElement('p', {
+                            key: 'desc',
+                            className: 'mt-4 text-gray-700 leading-relaxed'
+                        }, call.short_description.substring(0, 300) + (call.short_description.length > 300 ? '...' : '')),
+
+                        // Technologies
+                        call.technologies && call.technologies.length > 0 &&
+                        React.createElement('div', {
+                            key: 'tech',
+                            className: 'mt-4'
+                        }, [
+                            React.createElement('div', {
+                                key: 'label',
+                                className: 'text-xs font-semibold text-gray-500 mb-2'
+                            }, '🔬 TECHNOLOGIES'),
+                            React.createElement('div', {
+                                key: 'list',
+                                className: 'flex flex-wrap gap-2'
+                            }, call.technologies.slice(0, 8).map((tech, i) =>
+                                React.createElement('span', {
+                                    key: i,
+                                    className: 'px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-200'
+                                }, tech)
+                            ))
+                        ]),
+
+                        // Marchés
+                        call.markets && call.markets.length > 0 &&
+                        React.createElement('div', {
+                            key: 'markets',
+                            className: 'mt-3'
+                        }, [
+                            React.createElement('div', {
+                                key: 'label',
+                                className: 'text-xs font-semibold text-gray-500 mb-2'
+                            }, '🏢 MARCHÉS'),
+                            React.createElement('div', {
+                                key: 'list',
+                                className: 'flex flex-wrap gap-2'
+                            }, call.markets.slice(0, 6).map((market, i) =>
+                                React.createElement('span', {
+                                    key: i,
+                                    className: 'px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full border border-green-200'
+                                }, market)
+                            ))
+                        ]),
+
+                        // Dates et liens
+                        React.createElement('div', {
+                            key: 'footer',
+                            className: 'mt-6 pt-4 border-t border-gray-200 flex flex-wrap gap-4 items-center justify-between'
+                        }, [
+                            // Date
+                            call.closing_date && React.createElement('div', {
+                                key: 'date',
+                                className: 'flex items-center gap-2 text-sm'
+                            }, [
+                                React.createElement('span', { key: 'icon', className: 'text-red-500 font-bold' }, '🗓️'),
+                                React.createElement('span', {
+                                    key: 'text',
+                                    className: 'font-semibold text-red-600'
+                                }, 'Clôture : ' + new Date(call.closing_date).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric'
+                                }))
+                            ]),
+
+                            // Liens
+                            React.createElement('div', {
+                                key: 'links',
+                                className: 'flex gap-3'
+                            }, [
+                                call.official_url && React.createElement('a', {
+                                    key: 'official',
+                                    href: call.official_url,
+                                    target: '_blank',
+                                    rel: 'noopener noreferrer',
+                                    className: 'px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors'
+                                }, '📄 Plus d\'infos'),
+                                call.application_url && React.createElement('a', {
+                                    key: 'apply',
+                                    href: call.application_url,
+                                    target: '_blank',
+                                    rel: 'noopener noreferrer',
+                                    className: 'px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors'
+                                }, '✅ Candidater')
+                            ])
+                        ])
+                    ])
+                )),
+
+                // Pagination
+                data.totalPages > 1 && React.createElement('div', {
+                    key: 'pagination',
+                    className: 'flex items-center justify-center gap-4 mt-8 pt-6 border-t border-gray-200'
+                }, [
+                    React.createElement('button', {
+                        key: 'prev',
+                        onClick: () => setPage(p => Math.max(0, p - 1)),
+                        disabled: page === 0,
+                        className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                            page === 0
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`
+                    }, '← Précédent'),
+                    React.createElement('span', {
+                        key: 'info',
+                        className: 'text-sm text-gray-600 font-medium'
+                    }, `Page ${page + 1} sur ${data.totalPages}`),
+                    React.createElement('button', {
+                        key: 'next',
+                        onClick: () => setPage(p => Math.min(data.totalPages - 1, p + 1)),
+                        disabled: page >= data.totalPages - 1,
+                        className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                            page >= data.totalPages - 1
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`
+                    }, 'Suivant →')
+                ])
+            ]);
+        }
+
+        // App wrapper
+        function App() {
+            return React.createElement(
+                QueryClientProvider,
+                { client: queryClient },
+                React.createElement(ProjectCallsWidget)
+            );
+        }
+
+        // Render
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+    </script>
+</body>
+</html>
